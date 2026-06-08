@@ -760,10 +760,13 @@ async function renderClientDetail(id){
   const isForf=tipo?.lipe==='nessuna';
   const currY=new Date().getFullYear();
 
-  // Anni disponibili
+  // Anni disponibili — mostra sempre almeno anno corrente e precedente
   const {data:annRows}=await sb.from('annual_data').select('year').eq('profile_id',pid()).eq('client_id',id);
-  let years=[...new Set((annRows||[]).map(r=>r.year))].sort((a,b)=>b-a);
-  if(years.length===0){ years=[currY,currY-1]; }
+  let years=[...new Set((annRows||[]).map(r=>r.year))];
+  // Assicura che anno corrente e precedente siano sempre presenti
+  if(!years.includes(currY)) years.push(currY);
+  if(!years.includes(currY-1)) years.push(currY-1);
+  years=years.sort((a,b)=>b-a);
   const selY=_state.year||currY;
 
   // Dati anno selezionato
@@ -939,15 +942,16 @@ async function saveIvaAnn(cid,year,val){
   await sb.from('annual_data').upsert({profile_id:pid(),client_id:cid,year,...(row||{}),iva_annuale:val},{onConflict:'profile_id,client_id,year'});
 }
 async function toggleAdemp(cid,year,aid){
-  let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
+  let {data:row,error:fetchErr}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
   if(!row){
-    await sb.from('annual_data').insert({profile_id:pid(),client_id:cid,year,lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{}});
+    const {error:insErr}=await sb.from('annual_data').insert({profile_id:pid(),client_id:cid,year,lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{}});
+    if(insErr){ console.error('insert annual_data',insErr); toast('Errore salvataggio','⚠'); return; }
     row={lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{}};
   }
-  const ad=row?.adempimenti||{};
+  const ad=row.adempimenti||{};
   ad[aid]=!ad[aid];
-  const {error}=await sb.from('annual_data').upsert({profile_id:pid(),client_id:cid,year,...row,adempimenti:ad},{onConflict:'profile_id,client_id,year'});
-  if(error) console.error('toggleAdemp error',error);
+  const {error}=await sb.from('annual_data').update({adempimenti:ad}).eq('profile_id',pid()).eq('client_id',cid).eq('year',year);
+  if(error){ console.error('update adempimenti',error); toast('Errore salvataggio','⚠'); return; }
   renderClientDetail(cid);
 }
 async function saveAdempNota(cid,year,aid,val){
@@ -959,7 +963,9 @@ async function saveAdempNota(cid,year,aid,val){
 async function addYearClient(cid){
   const {data:rows}=await sb.from('annual_data').select('year').eq('profile_id',pid()).eq('client_id',cid);
   const years=(rows||[]).map(r=>r.year);
-  const next=Math.max(...years,new Date().getFullYear())+1;
+  const currY=new Date().getFullYear();
+  // Parte sempre dall'anno corrente +1, non dall'ultimo anno nel DB
+  const next=currY+1;
   let {data:tpl}=await sb.from('cartaceo_template').select('*').eq('profile_id',pid()).eq('client_id',cid).maybeSingle();
   const cartaceo=(tpl?.voci||[]).map(v=>({...v,stati:Array(v.pallini).fill(false)}));
   await sb.from('annual_data').upsert({profile_id:pid(),client_id:cid,year:next,lipe:{},cartaceo,adempimenti:{},note_adempimenti:{}},{onConflict:'profile_id,client_id,year'});
@@ -970,13 +976,14 @@ async function addYearClient(cid){
 async function toggleDot(cid,year,vi,si){
   let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
   if(!row){
-    await sb.from('annual_data').insert({profile_id:pid(),client_id:cid,year,lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{}});
+    const {error:insErr}=await sb.from('annual_data').insert({profile_id:pid(),client_id:cid,year,lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{}});
+    if(insErr){ console.error('insert annual_data',insErr); toast('Errore salvataggio','⚠'); return; }
     row={lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{}};
   }
-  const cart=row?.cartaceo||[];
+  const cart=Array.isArray(row.cartaceo)?row.cartaceo:[];
   if(cart[vi]) cart[vi].stati[si]=!cart[vi].stati[si];
-  const {error}=await sb.from('annual_data').upsert({profile_id:pid(),client_id:cid,year,...row,cartaceo:cart},{onConflict:'profile_id,client_id,year'});
-  if(error) console.error('toggleDot error',error);
+  const {error}=await sb.from('annual_data').update({cartaceo:cart}).eq('profile_id',pid()).eq('client_id',cid).eq('year',year);
+  if(error){ console.error('update cartaceo',error); toast('Errore salvataggio','⚠'); return; }
   renderClientDetail(cid);
 }
 
