@@ -333,6 +333,7 @@ const TYPES = {
   t8:{nome:'Professionista minimo',lipe:'nessuna'},
   t9:{nome:'Ditta minima',lipe:'nessuna'},
   t10:{nome:'Ente non commerciale',lipe:'nessuna'},
+  t11:{nome:'Generico',lipe:'nessuna',generico:true},
 };
 
 const MESI_S=['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -694,6 +695,7 @@ async function renderClienti(){
     (annAll||[]).forEach(r=>{
       const tipo=TYPES[filtered.find(c=>c.id===r.client_id)?.tipo_id];
       const isForf=tipo?.lipe==='nessuna';
+  const isGenerico=tipo?.generico===true;
       const ADEMP_FORF=['attive','passive','pagamenti','reddito','conti','precomp','sanitarie','cu','f24'];
       const ADEMP_LIPE=['pagamenti','precomp','sanitarie','cu','f24'];
       const adempKeys=isForf?ADEMP_FORF:ADEMP_LIPE;
@@ -781,7 +783,7 @@ async function renderClientDetail(id){
 
   // Dati anno selezionato
   let {data:annData}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',id).eq('year',selY).maybeSingle();
-  if(!annData){ annData={lipe:{},lipe_annuale:null,iva_annuale:null,cartaceo:[],adempimenti:{},note_adempimenti:{}}; }
+  if(!annData){ annData={lipe:{},lipe_annuale:null,iva_annuale:null,cartaceo:[],cartaceo_note:{},adempimenti:{},note_adempimenti:{}}; }
 
   // Template cartaceo
   let {data:cartTpl}=await sb.from('cartaceo_template').select('*').eq('profile_id',pid()).eq('client_id',id).maybeSingle();
@@ -813,7 +815,7 @@ async function renderClientDetail(id){
     {id:'f24',       label:'F24'},
   ];
 
-  const adempList = isForf ? ADEMP_FORF : ADEMP_LIPE;
+  const adempList = isGenerico ? [] : (isForf ? ADEMP_FORF : ADEMP_LIPE);
 
   function adempRow(a){
     const on=adempData[a.id]||false;
@@ -894,7 +896,10 @@ async function renderClientDetail(id){
                 onclick="toggleDot('${id}',${selY},${vi},${si})"></div>`).join('')}
             </div>
             <span class="dot-count">${v.stati.filter(Boolean).length}/${v.pallini}</span>
-            <div style="margin-left:auto;display:flex;gap:4px">
+            <input type="text" placeholder="nota…" value="${(annData.cartaceo_note||{})[vi]||''}"
+              style="flex:1;min-width:80px;border:none;border-bottom:1.5px solid var(--border);background:transparent;font-family:'Nunito';font-size:12px;color:var(--text4);padding:2px 4px;font-weight:600"
+              onblur="saveCartNota('${id}',${selY},${vi},this.value)">
+            <div style="display:flex;gap:4px;flex-shrink:0">
               <button onclick="event.stopPropagation();renameVoce('${id}',${selY},${vi},'${v.nome.replace(/'/g,"\'")}')" style="background:none;border:none;cursor:pointer;color:var(--text4);font-size:13px;padding:2px 5px;border-radius:4px" title="Rinomina">✏️</button>
               <button onclick="event.stopPropagation();deleteVoce('${id}',${selY},${vi})" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:13px;padding:2px 5px;border-radius:4px" title="Elimina">🗑</button>
             </div>
@@ -922,7 +927,7 @@ async function renderClientDetail(id){
       <span class="yr-tab add" onclick="addYearClient('${id}')">+ Anno</span>
     </div>
 
-    ${isForf ? adempHtml + cartHtml : lipeHtml + adempHtml + cartHtml}`;
+    ${isGenerico ? cartHtml : isForf ? adempHtml + cartHtml : lipeHtml + adempHtml + cartHtml}`;
 }
 
 
@@ -1418,6 +1423,12 @@ async function deleteVoce(cid,year,vi){
   let {data:tpl}=await sb.from('cartaceo_template').select('*').eq('profile_id',pid()).eq('client_id',cid).maybeSingle();
   if(tpl?.voci) { tpl.voci.splice(vi,1); await sb.from('cartaceo_template').update({voci:tpl.voci}).eq('profile_id',pid()).eq('client_id',cid); }
   toast('Voce eliminata!','🗑'); renderClientDetail(cid);
+}
+async function saveCartNota(cid,year,vi,val){
+  let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
+  const note=row?.cartaceo_note||{};
+  note[vi]=val;
+  await sb.from('annual_data').update({cartaceo_note:note}).eq('profile_id',pid()).eq('client_id',cid).eq('year',year);
 }
 function openModalNuovaVoce(cid,year){
   openModal(`<div class="modal-title">Nuova voce cartaceo</div>
