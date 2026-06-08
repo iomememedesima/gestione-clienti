@@ -689,7 +689,8 @@ async function renderClienti(){
   const currY=new Date().getFullYear();
   const annStati={};
   if(filtered.length>0){
-    const {data:annAll}=await sb.from('annual_data').select('client_id,year,cartaceo,adempimenti').eq('profile_id',pid()).eq('year',currY);
+    // Carica sia anno corrente che precedente
+    const {data:annAll}=await sb.from('annual_data').select('client_id,year,cartaceo,adempimenti').eq('profile_id',pid()).in('year',[currY,currY-1]);
     (annAll||[]).forEach(r=>{
       const tipo=TYPES[filtered.find(c=>c.id===r.client_id)?.tipo_id];
       const isForf=tipo?.lipe==='nessuna';
@@ -698,27 +699,36 @@ async function renderClienti(){
       const adempKeys=isForf?ADEMP_FORF:ADEMP_LIPE;
       const cart=Array.isArray(r.cartaceo)?r.cartaceo:[];
       const ad=r.adempimenti||{};
-      // Conta totale e fatti
       let tot=0,done=0;
       cart.forEach(v=>{tot+=v.pallini;done+=v.stati.filter(Boolean).length;});
       adempKeys.forEach(k=>{tot++;if(ad[k])done++;});
-      if(tot===0) annStati[r.client_id]='none';
-      else if(done===tot) annStati[r.client_id]='green';
-      else if(done>0) annStati[r.client_id]='yellow';
-      else annStati[r.client_id]='red';
+      const key=r.client_id+':'+r.year;
+      if(tot===0) annStati[key]='none';
+      else if(done===tot) annStati[key]='green';
+      else if(done>0) annStati[key]='yellow';
+      else annStati[key]='red';
     });
   }
 
   const rows=filtered.map(c=>{
     const t=TYPES[c.tipo_id];
-    const stato=annStati[c.id]||'none';
+    const statoY=annStati[c.id+':'+currY]||'none';
+    const statoY1=annStati[c.id+':'+(currY-1)]||'none';
     const statoColors={green:'#10b981',yellow:'#f59e0b',red:'#ef4444',none:'#d1d5db'};
-    const statoLabels={green:'Anno '+currY+' completo',yellow:'Anno '+currY+' in corso',red:'Anno '+currY+' da iniziare',none:''};
-    const statoDot=stato!=='none'?`<span title="${statoLabels[stato]}" style="width:10px;height:10px;border-radius:50%;background:${statoColors[stato]};display:inline-block;margin-left:6px;flex-shrink:0"></span>`:'';
+    const statoBg={green:'#d1fae5',yellow:'#fef9c3',red:'#fee2e2',none:'#f3f4f6'};
+    function annoTag(year,stato){
+      if(stato==='none') return '';
+      return `<span style="font-size:10px;font-weight:800;color:${statoColors[stato]};background:${statoBg[stato]};padding:2px 7px;border-radius:20px;margin-left:4px">${year}</span>`;
+    }
     return `<tr onclick="goPage('client-detail',{id:'${c.id}'})">
       <td><div style="display:flex;align-items:center;gap:12px">
         <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--p2),var(--pink));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex-shrink:0">${avatar(c.nome)}</div>
-        <div><div class="td-main" style="display:flex;align-items:center;gap:4px">${c.nome}${statoDot}</div><div class="td-sub">${t?.nome||'—'}</div></div>
+        <div>
+          <div class="td-main" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">
+            ${c.nome}${annoTag(currY,statoY)}${annoTag(currY-1,statoY1)}
+          </div>
+          <div class="td-sub">${t?.nome||'—'}</div>
+        </div>
       </div></td>
       <td><span class="pill ${c.attivo?'pill-done':'pill-todo'}">${c.attivo?'Attivo':'Archiviato'}</span></td>
       <td style="color:var(--text4);font-size:12px;font-weight:600;max-width:200px">${c.note||'—'}</td>
@@ -876,7 +886,7 @@ async function renderClientDetail(id){
       ${cartVoci.length===0
         ?'<div style="color:var(--text4);font-weight:700;font-size:13px">Nessuna voce. Aggiungine una!</div>'
         :cartVoci.map((v,vi)=>`
-          <div class="dots-row">
+          <div class="dots-row" style="position:relative">
             <div class="dot-name">${v.nome}</div>
             <div class="dots-wrap">
               ${v.stati.map((s,si)=>`<div class="dot ${s?'on':''}"
@@ -884,6 +894,10 @@ async function renderClientDetail(id){
                 onclick="toggleDot('${id}',${selY},${vi},${si})"></div>`).join('')}
             </div>
             <span class="dot-count">${v.stati.filter(Boolean).length}/${v.pallini}</span>
+            <div style="margin-left:auto;display:flex;gap:4px">
+              <button onclick="event.stopPropagation();renameVoce('${id}',${selY},${vi},'${v.nome.replace(/'/g,"\'")}')" style="background:none;border:none;cursor:pointer;color:var(--text4);font-size:13px;padding:2px 5px;border-radius:4px" title="Rinomina">✏️</button>
+              <button onclick="event.stopPropagation();deleteVoce('${id}',${selY},${vi})" style="background:none;border:none;cursor:pointer;color:var(--red);font-size:13px;padding:2px 5px;border-radius:4px" title="Elimina">🗑</button>
+            </div>
           </div>`).join('')}
     </div>`;
 
@@ -1382,6 +1396,29 @@ async function saveAssociaClienti(deadId,first){
   closeModal(); toast(`${checked.length} clienti aggiunti!`,'◉'); renderScadDetail(deadId);
 }
 
+async function renameVoce(cid,year,vi,nomeAttuale){
+  const nuovo=prompt('Nuovo nome per "'+nomeAttuale+'":', nomeAttuale);
+  if(!nuovo||nuovo===nomeAttuale) return;
+  let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
+  const cart=Array.isArray(row?.cartaceo)?row.cartaceo:[];
+  if(cart[vi]) cart[vi].nome=nuovo;
+  await sb.from('annual_data').update({cartaceo:cart}).eq('profile_id',pid()).eq('client_id',cid).eq('year',year);
+  // Aggiorna anche template
+  let {data:tpl}=await sb.from('cartaceo_template').select('*').eq('profile_id',pid()).eq('client_id',cid).maybeSingle();
+  if(tpl?.voci?.[vi]) { tpl.voci[vi].nome=nuovo; await sb.from('cartaceo_template').update({voci:tpl.voci}).eq('profile_id',pid()).eq('client_id',cid); }
+  toast('Voce rinominata!','✏️'); renderClientDetail(cid);
+}
+async function deleteVoce(cid,year,vi){
+  if(!confirm('Eliminare questa voce?')) return;
+  let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
+  const cart=Array.isArray(row?.cartaceo)?row.cartaceo:[];
+  cart.splice(vi,1);
+  await sb.from('annual_data').update({cartaceo:cart}).eq('profile_id',pid()).eq('client_id',cid).eq('year',year);
+  // Aggiorna anche template
+  let {data:tpl}=await sb.from('cartaceo_template').select('*').eq('profile_id',pid()).eq('client_id',cid).maybeSingle();
+  if(tpl?.voci) { tpl.voci.splice(vi,1); await sb.from('cartaceo_template').update({voci:tpl.voci}).eq('profile_id',pid()).eq('client_id',cid); }
+  toast('Voce eliminata!','🗑'); renderClientDetail(cid);
+}
 function openModalNuovaVoce(cid,year){
   openModal(`<div class="modal-title">Nuova voce cartaceo</div>
   <div class="form-group"><label class="form-label">Nome voce</label>
