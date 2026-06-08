@@ -695,7 +695,7 @@ async function renderClienti(){
     (annAll||[]).forEach(r=>{
       const tipo=TYPES[filtered.find(c=>c.id===r.client_id)?.tipo_id];
       const isForf=tipo?.lipe==='nessuna';
-  const isGenerico=tipo?.generico===true;
+  const isGenerico=!!(tipo?.generico);
       const ADEMP_FORF=['attive','passive','pagamenti','reddito','conti','precomp','sanitarie','cu','f24'];
       const ADEMP_LIPE=['pagamenti','precomp','sanitarie','cu','f24'];
       const adempKeys=isForf?ADEMP_FORF:ADEMP_LIPE;
@@ -770,6 +770,7 @@ async function renderClientDetail(id){
   const tipo=TYPES[client.tipo_id];
   const lipe=getLipePeriods(client.tipo_id);
   const isForf=tipo?.lipe==='nessuna';
+  const isGenerico=!!(tipo?.generico);
   const currY=new Date().getFullYear();
 
   // Anni disponibili — mostra sempre almeno anno corrente e precedente
