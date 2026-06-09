@@ -1514,24 +1514,25 @@ async function saveNuovaScad(){
 function openModalEditScad(id){
   getDeadlines().then(deadlines=>{
     const d=deadlines.find(x=>x.id===id); if(!d) return;
-    openModal('<div class="modal-title">Modifica scadenza</div>'
-      +'<div class="form-group"><label class="form-label">Titolo</label>'
-      +'<input class="form-input" id="m-tit" type="text" value="'+d.titolo+'"></div>'
-      +'<div class="form-row">'
-      +'<div class="form-group"><label class="form-label">Data</label>'
-      +'<input class="form-input" id="m-data" type="date" value="'+d.data+'"></div>'
-      +'<div class="form-group"><label class="form-label">Categoria</label>'
-      +'<select class="form-input form-select" id="m-cat">'
-      +['IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Generale'].map(c=>'<option '+(d.categoria===c?'selected':'')+'>'+c+'</option>').join('')
-      +'</select></div></div>'
-      +'<div class="form-group"><label class="form-label">Ricorrenza</label>'
-      +'<select class="form-input form-select" id="m-ric">'
-      +['Singola','Mensile','Trimestrale','Annuale'].map(r=>'<option '+(d.ricorrenza===r?'selected':'')+'>'+r+'</option>').join('')
-      +'</select></div>'
-      +'<div class="modal-footer">'
-      +'<button class="btn btn-ghost" onclick="closeModal()">Annulla</button>'
-      +'<button class="btn btn-primary" onclick="saveEditScad(''+id+'')">Salva</button>'
-      +'</div>');
+    const cats=['IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Generale'];
+    const rics=['Singola','Mensile','Trimestrale','Annuale'];
+    const catOpts=cats.map(c=>`<option ${d.categoria===c?'selected':''}>${c}</option>`).join('');
+    const ricOpts=rics.map(r=>`<option ${d.ricorrenza===r?'selected':''}>${r}</option>`).join('');
+    openModal(`<div class="modal-title">Modifica scadenza</div>
+      <div class="form-group"><label class="form-label">Titolo</label>
+        <input class="form-input" id="m-tit" type="text" value="${d.titolo.replace(/"/g,'&quot;')}"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Data</label>
+          <input class="form-input" id="m-data" type="date" value="${d.data}"></div>
+        <div class="form-group"><label class="form-label">Categoria</label>
+          <select class="form-input form-select" id="m-cat">${catOpts}</select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Ricorrenza</label>
+        <select class="form-input form-select" id="m-ric">${ricOpts}</select></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Annulla</button>
+        <button class="btn btn-primary" onclick="saveEditScad('${id}')">Salva</button>
+      </div>`);
   });
 }
 async function saveEditScad(id){
