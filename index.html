@@ -341,16 +341,16 @@ const MESI_L=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','
 const TRIMESTRI=['T1 (gen-mar)','T2 (apr-giu)','T3 (lug-set)','T4 (ott-dic)'];
 
 const SCAD_AE = [
-  {titolo:'Liquidazione IVA mensile',    giorno:16, mesi:[1,2,3,4,5,6,7,8,9,10,11,12], cat:'IVA',    tipi:['t1','t2']},
-  {titolo:'Liquidazione IVA trimestrale',giorno:16, mesi:[5,8,11],                     cat:'IVA',    tipi:['t3','t4','t5']},
-  {titolo:'LIPE mensile',                giorno:31, mesi:[1,2,3,4,5,6,7,8,9,10,11,12], cat:'LIPE',   tipi:['t1','t2']},
-  {titolo:'LIPE trimestrale',            giorno:31, mesi:[5,8,11,2],                    cat:'LIPE',   tipi:['t3','t4','t5']},
-  {titolo:'Fissi INPS professionisti',   giorno:16, mesi:[5,8,11,2],                    cat:'INPS',   tipi:['t5']},
-  {titolo:'Acconto IVA annuale',         giorno:27, mesi:[12],                          cat:'IVA',    tipi:['t1','t2','t3','t4','t5']},
-  {titolo:'Dichiarazione IVA annuale',   giorno:30, mesi:[4],                           cat:'Dichiarazione', tipi:['t1','t2','t3','t4','t5']},
-  {titolo:'CU dipendenti',              giorno:16, mesi:[3],                           cat:'CU',     tipi:[]},
-  {titolo:'770',                         giorno:31, mesi:[10],                          cat:'770',    tipi:[]},
-  {titolo:'F24 ritenute d\'acconto',     giorno:16, mesi:[1,2,3,4,5,6,7,8,9,10,11,12], cat:'F24',    tipi:['t5','t6']},
+  {titolo:'Liquidazione IVA mensile',    giorno:16, mesi:[1,2,3,4,5,6,7,8,9,10,11,12], cat:'IVA',          tipi:['t1','t2']},
+  {titolo:'Liquidazione IVA trimestrale',giorno:16, mesi:[5,8,11],                      cat:'IVA',          tipi:['t3','t4','t5']},
+  {titolo:'LIPE mensile',                giorno:31, mesi:[1,2,3,4,5,6,7,8,9,10,11,12], cat:'LIPE',         tipi:['t1','t2']},
+  {titolo:'LIPE trimestrale',            giorno:31, mesi:[5,8,11,2],                    cat:'LIPE',         tipi:['t3','t4','t5']},
+  {titolo:'Acconto IVA annuale',         giorno:27, mesi:[12],                          cat:'IVA',          tipi:['t1','t2','t3','t4','t5','t10']},
+  {titolo:'Dichiarazione IVA annuale',   giorno:30, mesi:[4],                           cat:'Dichiarazione',tipi:['t1','t2','t3','t4','t5','t10']},
+  {titolo:'CU dipendenti',               giorno:16, mesi:[3],                           cat:'CU',           tipi:['t2','t4','t5']},
+  {titolo:'770',                         giorno:31, mesi:[10],                          cat:'770',          tipi:['t2','t4','t5']},
+  {titolo:'F24 ritenute d'acconto',     giorno:16, mesi:[1,2,3,4,5,6,7,8,9,10,11,12], cat:'F24',          tipi:[]},
+  {titolo:'Fissi INPS professionisti',   giorno:16, mesi:[5,8,11,2],                    cat:'INPS',         tipi:[]},
 ];
 
 const BADGE_DEFS=[
@@ -1287,7 +1287,11 @@ async function renderScadDetail(id){
         <div style="font-size:22px;font-weight:900;color:var(--p1)">${dead.titolo}</div>
         <div style="font-size:13px;color:var(--text4);font-weight:700">${dead.categoria} · ${dead.ricorrenza} · ${fmtDate(dead.data)}</div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="openModalAssociaClienti('${id}')">+ Aggiungi clienti</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openModalEditScad('${dead.id}')">✏️ Modifica</button>
+        <button class="btn btn-ghost btn-sm" onclick="openModalAssociaClienti('${id}')">+ Aggiungi clienti</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteScadenza('${dead.id}')">🗑 Elimina</button>
+      </div>
     </div>
 
     <div class="card">
@@ -1507,6 +1511,44 @@ async function saveNuovaScad(){
   closeModal(); renderScadenzario();
 }
 
+function openModalEditScad(id){
+  getDeadlines().then(deadlines=>{
+    const d=deadlines.find(x=>x.id===id); if(!d) return;
+    openModal('<div class="modal-title">Modifica scadenza</div>'
+      +'<div class="form-group"><label class="form-label">Titolo</label>'
+      +'<input class="form-input" id="m-tit" type="text" value="'+d.titolo+'"></div>'
+      +'<div class="form-row">'
+      +'<div class="form-group"><label class="form-label">Data</label>'
+      +'<input class="form-input" id="m-data" type="date" value="'+d.data+'"></div>'
+      +'<div class="form-group"><label class="form-label">Categoria</label>'
+      +'<select class="form-input form-select" id="m-cat">'
+      +['IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Generale'].map(c=>'<option '+(d.categoria===c?'selected':'')+'>'+c+'</option>').join('')
+      +'</select></div></div>'
+      +'<div class="form-group"><label class="form-label">Ricorrenza</label>'
+      +'<select class="form-input form-select" id="m-ric">'
+      +['Singola','Mensile','Trimestrale','Annuale'].map(r=>'<option '+(d.ricorrenza===r?'selected':'')+'>'+r+'</option>').join('')
+      +'</select></div>'
+      +'<div class="modal-footer">'
+      +'<button class="btn btn-ghost" onclick="closeModal()">Annulla</button>'
+      +'<button class="btn btn-primary" onclick="saveEditScad(''+id+'')">Salva</button>'
+      +'</div>');
+  });
+}
+async function saveEditScad(id){
+  const titolo=document.getElementById('m-tit').value.trim();
+  const data=document.getElementById('m-data').value;
+  const categoria=document.getElementById('m-cat').value;
+  const ricorrenza=document.getElementById('m-ric').value;
+  if(!titolo||!data){alert('Titolo e data obbligatori.');return;}
+  await sb.from('deadlines').update({titolo,data,categoria,ricorrenza}).eq('id',id).eq('profile_id',pid());
+  closeModal(); toast('Scadenza aggiornata!','✏️'); renderScadDetail(id);
+}
+async function deleteScadenza(id){
+  if(!confirm('Eliminare questa scadenza e tutti i task collegati?')) return;
+  await sb.from('tasks').delete().eq('deadline_id',id).eq('profile_id',pid());
+  await sb.from('deadlines').delete().eq('id',id).eq('profile_id',pid());
+  toast('Scadenza eliminata','🗑'); goPage('scadenzario');
+}
 async function openModalAssociaClienti(deadId){
   const [clients,tasks]=await Promise.all([getClients(),getTasks(deadId)]);
   const already=tasks.map(t=>t.client_id);
