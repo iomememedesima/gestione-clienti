@@ -1134,8 +1134,9 @@ async function renderScadenzario(){
     const cls=pc===100?'done':g<=3&&g>0?'hot':pc<50?'warn':'';
     const pillC=pc===100?'pill-closed':g<0?'pill-hot':g<=3?'pill-hot':'pill-wip';
     const pillT=pc===100?'✓ Chiusa':g<0?'Scaduta':g<=3?'⚠ Urgente':'In corso';
-    return `<tr onclick="goPage('scad-detail',{id:'${d.id}'})">
-      <td><div class="td-main">${d.titolo}</div><div class="td-sub">${d.categoria} · ${d.ricorrenza}</div></td>
+    return `<tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="scad-sel" value="${d.id}" style="accent-color:var(--p1);width:16px;height:16px" onchange="updateDelBtn()"></td>
+      <td onclick="goPage('scad-detail',{id:'${d.id}'})" style="cursor:pointer"><div class="td-main">${d.titolo}</div><div class="td-sub">${d.categoria} · ${d.ricorrenza}</div></td>
       <td style="font-weight:700;color:var(--text2)">${fmtDate(d.data)}</td>
       <td style="font-weight:700;color:var(--text4)">${s.done}/${s.total}</td>
       <td><div class="prog-wrap" style="width:90px"><div class="prog-fill ${cls}" style="width:${pc}%"></div></div>
@@ -1147,7 +1148,8 @@ async function renderScadenzario(){
   el.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div style="font-size:22px;font-weight:900;color:var(--p1)">Scadenzario</div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-danger btn-sm" id="btn-del-sel" style="display:none" onclick="deleteSelected()">🗑 Elimina selezionate</button>
         <button class="btn btn-ghost btn-sm" onclick="openModalImportAE()">📋 Import AE</button>
         <button class="btn btn-primary" onclick="openModalNuovaScad()">+ Nuova scadenza</button>
       </div>
@@ -1156,13 +1158,33 @@ async function renderScadenzario(){
     <div class="card" style="padding:0;overflow:hidden">
       ${filtered.length===0
         ?'<div style="text-align:center;padding:40px;color:var(--text4);font-weight:700">Nessuna scadenza.</div>'
-        :`<table class="tbl"><thead><tr><th>Scadenza</th><th>Data</th><th>Clienti</th><th>Avanzamento</th><th>Stato</th></tr></thead><tbody>${rows}</tbody></table>`}
+        :`<table class="tbl" id="scad-tbl"><thead><tr><th style="width:36px"><input type="checkbox" id="sel-all" onchange="toggleSelAll(this)" style="accent-color:var(--p1);width:16px;height:16px"></th><th>Scadenza</th><th>Data</th><th>Clienti</th><th>Avanzamento</th><th>Stato</th></tr></thead><tbody>${rows}</tbody></table>`}
     </div>`;
 }
 
 /* ══════════════════════════════════════
    DETTAGLIO SCADENZA
 ══════════════════════════════════════ */
+function updateDelBtn(){
+  const sel=document.querySelectorAll('.scad-sel:checked');
+  const btn=document.getElementById('btn-del-sel');
+  if(btn) btn.style.display=sel.length>0?'inline-flex':'none';
+}
+function toggleSelAll(cb){
+  document.querySelectorAll('.scad-sel').forEach(el=>{ el.checked=cb.checked; });
+  updateDelBtn();
+}
+async function deleteSelected(){
+  const sel=[...document.querySelectorAll('.scad-sel:checked')].map(el=>el.value);
+  if(!sel.length) return;
+  if(!confirm('Eliminare '+sel.length+' scadenze selezionate?')) return;
+  // Elimina tasks collegati
+  await sb.from('tasks').delete().in('deadline_id',sel).eq('profile_id',pid());
+  // Elimina scadenze
+  await sb.from('deadlines').delete().in('id',sel).eq('profile_id',pid());
+  toast(sel.length+' scadenze eliminate','🗑');
+  renderScadenzario();
+}
 async function renderScadDetail(id){
   const el=document.getElementById('scad-detail-content');
   el.innerHTML='<div style="padding:40px;text-align:center"><div class="spinner"></div></div>';
