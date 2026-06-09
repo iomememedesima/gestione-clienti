@@ -508,6 +508,74 @@ async function getClientTasks(clientId){
 }
 
 /* ══════════════════════════════════════
+   TO-DO LIST
+══════════════════════════════════════ */
+function getTodos(){
+  try{ return JSON.parse(localStorage.getItem('todos_'+pid())||'[]'); }catch(e){ return []; }
+}
+function saveTodos(todos){ localStorage.setItem('todos_'+pid(), JSON.stringify(todos)); }
+function cleanExpiredTodos(){
+  const midnight=new Date(); midnight.setHours(0,0,0,0);
+  let todos=getTodos().filter(t=>!t.checked||(new Date(t.checkedAt||0)>=midnight));
+  saveTodos(todos);
+}
+function renderTodoList(){
+  cleanExpiredTodos();
+  const todos=getTodos();
+  const el=document.getElementById('todo-list');
+  if(!el) return;
+  const today=new Date().toISOString().slice(0,10);
+  if(todos.length===0){
+    el.innerHTML='<div style="color:var(--text4);font-size:13px;font-weight:600;text-align:center;padding:12px">Nessuna cosa da fare oggi 🎉</div>';
+    return;
+  }
+  el.innerHTML=todos.map((t,i)=>{
+    const scaduta=t.data&&t.data<today;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      +'<input type="checkbox" '+(t.checked?'checked':'')+' style="width:18px;height:18px;accent-color:var(--p1);cursor:pointer;flex-shrink:0" onchange="checkTodo('+i+',this.checked)">'
+      +'<span style="flex:1;font-size:13px;font-weight:600;color:var(--text);'+(t.checked?'text-decoration:line-through;opacity:.5':'')+'">'+(t.testo)+'</span>'
+      +(t.data?'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:'+(scaduta?'var(--red2)':'var(--p5)')+';color:'+(scaduta?'var(--red)':'var(--p1)')+'">'+t.data+'</span>':'')
+      +'<button onclick="deleteTodo('+i+')" style="background:none;border:none;cursor:pointer;color:var(--text4);font-size:14px;padding:2px 6px">✕</button>'
+      +'</div>';
+  }).join('');
+}
+function checkTodo(idx,checked){
+  const todos=getTodos();
+  todos[idx].checked=checked;
+  todos[idx].checkedAt=checked?new Date().toISOString():null;
+  saveTodos(todos);
+  if(checked){
+    const midnight=new Date(); midnight.setDate(midnight.getDate()+1); midnight.setHours(0,0,0,0);
+    setTimeout(()=>{ cleanExpiredTodos(); renderTodoList(); }, midnight-new Date());
+  }
+  renderTodoList();
+}
+function deleteTodo(idx){
+  const todos=getTodos(); todos.splice(idx,1); saveTodos(todos); renderTodoList();
+}
+function openModalNuovoTodo(){
+  openModal('<div class="modal-title">Nuova cosa da fare</div>'
+    +'<div class="form-group"><label class="form-label">Cosa devo fare</label>'
+    +'<input class="form-input" id="m-todo" type="text" placeholder="es. Chiamare Rossi, Inviare F24…"></div>'
+    +'<div class="form-group"><label class="form-label">Scadenza (opzionale)</label>'
+    +'<input class="form-input" id="m-todo-data" type="date"></div>'
+    +'<div class="modal-footer">'
+    +'<button class="btn btn-ghost" onclick="closeModal()">Annulla</button>'
+    +'<button class="btn btn-primary" onclick="saveTodo()">Aggiungi</button>'
+    +'</div>');
+  setTimeout(()=>document.getElementById('m-todo')?.focus(),100);
+}
+function saveTodo(){
+  const testo=document.getElementById('m-todo')?.value.trim();
+  if(!testo){alert('Inserisci il testo.');return;}
+  const data=document.getElementById('m-todo-data')?.value||null;
+  const todos=getTodos();
+  todos.push({testo,data,checked:false,checkedAt:null});
+  saveTodos(todos);
+  closeModal(); renderTodoList(); toast('Aggiunto!','✅');
+}
+
+/* ══════════════════════════════════════
    NAVIGAZIONE
 ══════════════════════════════════════ */
 let _state={};
@@ -619,6 +687,14 @@ async function renderHome(){
       <div class="metric hi"><div class="metric-label">Ritmo consigliato</div><div class="metric-val">${ritmo}</div><div class="metric-sub">clienti/giorno</div></div>
     </div>
 
+    <div class="card" id="todo-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="card-title" style="margin:0">✅ To-do di oggi</div>
+        <button class="btn btn-ghost btn-sm" onclick="openModalNuovoTodo()">+ Aggiungi</button>
+      </div>
+      <div id="todo-list"></div>
+    </div>
+
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div class="card-title" style="margin:0">Scadenze — ${MESI_L[homeMonth]} ${homeYear}</div>
@@ -650,17 +726,21 @@ async function getTaskStats(deadlineId){
   const dead=(await getDeadlines()).find(d=>d.id===deadlineId);
   const wf=getWF(dead?.categoria);
   const last=wf[wf.length-1];
-  const done=tasks.filter(t=>t.stato_generale===last||t.stato_generale==='Completato').length;
+  const prevLast=wf[wf.length-2]||'';
+  // Per F24/IVA/INPS sia "Inviato" che "Inviato via mail" contano come fatto
+  const isDone=(t)=>t.stato_generale===last||t.stato_generale==='Completato'||(prevLast==='Inviato'&&t.stato_generale==='Inviato');
+  const done=tasks.filter(isDone).length;
   const total=tasks.length;
   return {done,total,rim:total-done,pct:pct(done,total),tasks};
 }
 
 function getWF(cat){
-  if(cat==='F24'||cat==='IVA'||cat==='INPS') return ['Richiesto','Creato','Inviato','Mandato via mail'];
+  if(cat==='F24'||cat==='IVA'||cat==='INPS') return ['Richiesto','Creato','Inviato','Inviato via mail'];
   if(cat==='LIPE') return ['Richiesto','Scaricato','Caricato','Controllato'];
   if(cat==='Dichiarazione') return ['Bozza','Controllato','Inviato','Ricevuta'];
   if(cat==='CU'||cat==='770') return ['Elaborato','Inviato dipendente','Trasmesso AE'];
   return ['Da fare','In lavorazione','Completato'];
+  setTimeout(()=>renderTodoList(),50);
 }
 
 /* ══════════════════════════════════════
@@ -794,7 +874,7 @@ async function renderClientDetail(id){
   const adempData=annData.adempimenti||{};
   const noteData=annData.note_adempimenti||{};
 
-  // Adempimenti per forfettari/minimi
+  // Adempimenti per forfettari/minimi (t6,t7,t8,t9)
   const ADEMP_FORF=[
     {id:'attive',    label:'Attive'},
     {id:'passive',   label:'Passive'},
@@ -806,9 +886,19 @@ async function renderClientDetail(id){
     {id:'cu',        label:'CU'},
     {id:'f24',       label:'F24'},
   ];
-
-  // Adempimenti per mensili/trimestrali/professionisti
-  const ADEMP_LIPE=[
+  // Semplificate (t1,t3): no pagamenti, no precompilata, no sanitarie
+  const ADEMP_SEMPL=[
+    {id:'cu',  label:'CU'},
+    {id:'f24', label:'F24'},
+  ];
+  // Ordinarie (t2,t4): no precompilata, no sanitarie
+  const ADEMP_ORD=[
+    {id:'pagamenti', label:'Pagamenti'},
+    {id:'cu',        label:'CU'},
+    {id:'f24',       label:'F24'},
+  ];
+  // Professionisti (t5): tutto
+  const ADEMP_PROF=[
     {id:'pagamenti', label:'Pagamenti'},
     {id:'precomp',   label:'Precompilata'},
     {id:'sanitarie', label:'Sanitarie'},
@@ -816,7 +906,14 @@ async function renderClientDetail(id){
     {id:'f24',       label:'F24'},
   ];
 
-  const adempList = isGenerico ? [] : (isForf ? ADEMP_FORF : ADEMP_LIPE);
+  const tipoId=client.tipo_id;
+  let adempList=[];
+  if(isGenerico||!tipoId) adempList=[];
+  else if(['t6','t7','t8','t9'].includes(tipoId)) adempList=ADEMP_FORF;
+  else if(['t1','t3'].includes(tipoId)) adempList=ADEMP_SEMPL;
+  else if(['t2','t4'].includes(tipoId)) adempList=ADEMP_ORD;
+  else if(tipoId==='t5') adempList=ADEMP_PROF;
+  else adempList=ADEMP_PROF;
 
   function adempRow(a){
     const on=adempData[a.id]||false;
@@ -880,6 +977,16 @@ async function renderClientDetail(id){
     </div>` : '';
 
   // Cartaceo HTML
+  const noteGen=annData.note_generali||'';
+  const noteHtml=`
+    <div class="card">
+      <div class="card-title">Note generali</div>
+      <textarea
+        style="width:100%;min-height:80px;padding:10px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--r);font-family:'Nunito';font-size:14px;color:var(--text);resize:vertical"
+        placeholder="Note generali sul cliente…"
+        onblur="saveNoteGenerali('${id}',${selY},this.value)">${noteGen}</textarea>
+    </div>`;
+
   const cartHtml=`
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
@@ -928,7 +1035,7 @@ async function renderClientDetail(id){
       <span class="yr-tab add" onclick="addYearClient('${id}')">+ Anno</span>
     </div>
 
-    ${isGenerico ? cartHtml : isForf ? adempHtml + cartHtml : lipeHtml + adempHtml + cartHtml}`;
+    ${isGenerico ? cartHtml + noteHtml : isForf ? adempHtml + cartHtml + noteHtml : lipeHtml + adempHtml + cartHtml + noteHtml}`;
 }
 
 
@@ -1067,7 +1174,10 @@ async function renderScadDetail(id){
   const [tasks,clients,allDeads]=await Promise.all([getTasks(id),getClients(),getDeadlines()]);
   const wf=getWF(dead.categoria);
   const last=wf[wf.length-1];
-  const done=tasks.filter(t=>t.stato_generale===last||t.stato_generale==='Completato').length;
+  const prevLast=wf[wf.length-2]||'';
+  // Per F24/IVA/INPS sia "Inviato" che "Inviato via mail" contano come fatto
+  const isDone=(t)=>t.stato_generale===last||t.stato_generale==='Completato'||(prevLast==='Inviato'&&t.stato_generale==='Inviato');
+  const done=tasks.filter(isDone).length;
   const total=tasks.length;
   const pc=pct(done,total);
   const today=new Date(); today.setHours(0,0,0,0);
@@ -1425,6 +1535,11 @@ async function deleteVoce(cid,year,vi){
   if(tpl?.voci) { tpl.voci.splice(vi,1); await sb.from('cartaceo_template').update({voci:tpl.voci}).eq('profile_id',pid()).eq('client_id',cid); }
   toast('Voce eliminata!','🗑'); renderClientDetail(cid);
 }
+async function saveNoteGenerali(cid,year,val){
+  let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
+  if(!row){ await sb.from('annual_data').insert({profile_id:pid(),client_id:cid,year,lipe:{},cartaceo:[],adempimenti:{},note_adempimenti:{},note_generali:val}); return; }
+  await sb.from('annual_data').update({note_generali:val}).eq('profile_id',pid()).eq('client_id',cid).eq('year',year);
+}
 async function saveCartNota(cid,year,vi,val){
   let {data:row}=await sb.from('annual_data').select('*').eq('profile_id',pid()).eq('client_id',cid).eq('year',year).maybeSingle();
   const note=row?.cartaceo_note||{};
@@ -1438,6 +1553,7 @@ function openModalNuovaVoce(cid,year){
   <div class="form-group"><label class="form-label">Pallini</label>
     <select class="form-input form-select" id="m-vpall">
       <option value="1">1 pallino (annuale)</option>
+      <option value="4">4 pallini (trimestrale)</option>
       <option value="12">12 pallini (mensile)</option>
     </select></div>
   <div class="modal-footer">
