@@ -592,7 +592,7 @@ function goPage(page,state={}){
   document.querySelectorAll('.tnav').forEach(n=>n.classList.toggle('active',n.dataset.page===page));
   const el=document.getElementById('page-'+page);
   if(el){ el.classList.add('active'); }
-  if(page==='home') renderHome();
+  if(page==='home') renderHome().then(()=>setTimeout(()=>renderTodoList(),100));
   else if(page==='clienti') renderClienti();
   else if(page==='scadenzario') renderScadenzario();
   else if(page==='scad-detail') renderScadDetail(state.id);
@@ -734,9 +734,19 @@ async function getTaskStats(deadlineId){
   const wf=getWF(dead?.categoria);
   const last=wf[wf.length-1];
   const prevLast=wf[wf.length-2]||'';
-  // Per F24/IVA/INPS sia "Inviato" che "Inviato via mail" contano come fatto
   const isDone=(t)=>t.stato_generale===last||t.stato_generale==='Completato'||(prevLast==='Inviato'&&t.stato_generale==='Inviato');
-  const done=tasks.filter(isDone).length;
+  // Per Richieste documenti usa pesi: Avvisato=0.5, Portato=1
+  let done;
+  if(dead?.categoria==='Richieste documenti'){
+    const score=tasks.reduce((acc,t)=>{
+      if(t.stato_generale==='Portato') return acc+1;
+      if(t.stato_generale==='Avvisato') return acc+0.5;
+      return acc;
+    },0);
+    done=score; // può essere decimale
+  } else {
+    done=tasks.filter(isDone).length;
+  }
   const total=tasks.length;
   return {done,total,rim:total-done,pct:pct(done,total),tasks};
 }
@@ -746,8 +756,8 @@ function getWF(cat){
   if(cat==='LIPE') return ['Richiesto','Scaricato','Caricato','Controllato'];
   if(cat==='Dichiarazione') return ['Bozza','Controllato','Inviato','Ricevuta'];
   if(cat==='CU'||cat==='770') return ['Elaborato','Inviato dipendente','Trasmesso AE'];
+  if(cat==='Richieste documenti') return ['Avvisato','Portato'];
   return ['Da fare','In lavorazione','Completato'];
-  setTimeout(()=>renderTodoList(),50);
 }
 
 /* ══════════════════════════════════════
@@ -1130,7 +1140,7 @@ async function renderScadenzario(){
   const stats=await Promise.all(filtered.map(d=>getTaskStats(d.id)));
   const today=new Date(); today.setHours(0,0,0,0);
 
-  const cats=['Tutte','IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Generale'];
+  const cats=['Tutte','IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Richieste documenti','Generale'];
   const pills=cats.map(c=>`<span class="fpill ${filtCat===c?'on':''}" onclick="_state.cat='${c}';renderScadenzario()">${c}</span>`).join('');
 
   const rows=filtered.map((d,i)=>{
@@ -1204,9 +1214,19 @@ async function renderScadDetail(id){
   const wf=getWF(dead.categoria);
   const last=wf[wf.length-1];
   const prevLast=wf[wf.length-2]||'';
-  // Per F24/IVA/INPS sia "Inviato" che "Inviato via mail" contano come fatto
   const isDone=(t)=>t.stato_generale===last||t.stato_generale==='Completato'||(prevLast==='Inviato'&&t.stato_generale==='Inviato');
-  const done=tasks.filter(isDone).length;
+  // Per Richieste documenti usa pesi: Avvisato=0.5, Portato=1
+  let done;
+  if(dead?.categoria==='Richieste documenti'){
+    const score=tasks.reduce((acc,t)=>{
+      if(t.stato_generale==='Portato') return acc+1;
+      if(t.stato_generale==='Avvisato') return acc+0.5;
+      return acc;
+    },0);
+    done=score; // può essere decimale
+  } else {
+    done=tasks.filter(isDone).length;
+  }
   const total=tasks.length;
   const pc=pct(done,total);
   const today=new Date(); today.setHours(0,0,0,0);
@@ -1268,10 +1288,10 @@ async function renderScadDetail(id){
     }
 
     return `<tr>
-      <td onclick="goPage('client-detail',{id:'${cl?.id}'})">
+      <td ${cl?`onclick="goPage('client-detail',{id:'${cl.id}'})"`:''}  style="${cl?'cursor:pointer':''}">
         <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--p3),var(--pink));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#fff">${cl?avatar(cl.nome):'?'}</div>
-          <div><div class="td-main">${cl?.nome||'—'}</div><div class="td-sub">${tipo?.nome||'—'}</div></div>
+          <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,${t.nome_libero?'#f97316,#fbbf24':'var(--p3),var(--pink)'});display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#fff">${t.nome_libero?t.nome_libero.split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase():cl?avatar(cl.nome):'?'}</div>
+          <div><div class="td-main">${t.nome_libero||cl?.nome||'—'}</div><div class="td-sub">${t.nome_libero?'Nominativo libero':tipo?.nome||'—'}</div></div>
         </div>
       </td>
       <td>
@@ -1521,7 +1541,7 @@ async function saveNuovaScad(){
 function openModalEditScad(id){
   getDeadlines().then(deadlines=>{
     const d=deadlines.find(x=>x.id===id); if(!d) return;
-    const cats=['IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Generale'];
+    const cats=['IVA','F24','LIPE','INPS','Dichiarazione','CU','770','Richieste documenti','Generale'];
     const rics=['Singola','Mensile','Trimestrale','Annuale'];
     const catOpts=cats.map(c=>`<option ${d.categoria===c?'selected':''}>${c}</option>`).join('');
     const ricOpts=rics.map(r=>`<option ${d.ricorrenza===r?'selected':''}>${r}</option>`).join('');
@@ -1562,8 +1582,14 @@ async function openModalAssociaClienti(deadId){
   const already=tasks.map(t=>t.client_id);
   const dead=(await getDeadlines()).find(d=>d.id===deadId);
   const wf=getWF(dead?.categoria||'Generale'); const first=wf[0];
+  const isRichDoc=dead?.categoria==='Richieste documenti';
   openModal(`<div class="modal-title">Aggiungi clienti</div>
-  <div style="max-height:340px;overflow-y:auto">
+  ${isRichDoc?`<div class="form-group"><label class="form-label">Aggiungi nominativo libero</label>
+    <div style="display:flex;gap:8px">
+      <input class="form-input" id="m-nomlibero" type="text" placeholder="Nome cognome…" style="flex:1">
+      <button class="btn btn-ghost btn-sm" onclick="addNomLibero('${deadId}','${first}')">+ Aggiungi</button>
+    </div></div><hr class="divider">`:''}
+  <div style="max-height:300px;overflow-y:auto">
     ${clients.map(c=>`
       <label style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer">
         <input type="checkbox" value="${c.id}" ${already.includes(c.id)?'checked disabled':''} style="width:16px;height:16px;accent-color:var(--p1)">
@@ -1574,8 +1600,19 @@ async function openModalAssociaClienti(deadId){
   </div>
   <div class="modal-footer">
     <button class="btn btn-ghost" onclick="closeModal()">Chiudi</button>
-    <button class="btn btn-primary" onclick="saveAssociaClienti('${deadId}','${first}')">Aggiungi</button>
+    <button class="btn btn-primary" onclick="saveAssociaClienti('${deadId}','${first}')">Aggiungi selezionati</button>
   </div>`);
+}
+async function addNomLibero(deadId,first){
+  const nome=document.getElementById('m-nomlibero')?.value.trim();
+  if(!nome) return;
+  // Crea task con nome_libero invece di client_id
+  await sb.from('tasks').insert({profile_id:pid(),deadline_id:deadId,client_id:null,stato_generale:first,nota:'',nome_libero:nome});
+  document.getElementById('m-nomlibero').value='';
+  toast(nome+' aggiunto!','✓');
+  // Aggiorna lista task nel modal
+  closeModal();
+  renderScadDetail(deadId);
 }
 async function saveAssociaClienti(deadId,first){
   const checked=[...document.querySelectorAll('#modal-box input[type=checkbox]:checked:not(:disabled)')].map(el=>el.value);
